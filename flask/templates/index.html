@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>People Counter Live Stream</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+</head>
+<body>
+    <h1>People Counter Live Stream</h1>
+    <img src="/video_feed" alt="Live Stream">
+
+    <h2>Detected Times</h2>
+    <table border="1" id="detections-table">
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Timestamp</th>
+            </tr>
+        </thead>
+        <tbody id="time-table-body">
+            <!-- AJAX로 데이터 로드 -->
+        </tbody>
+    </table>
+
+    <script>
+        function updateDetections() {
+            fetch('/detections')
+                .then(response => response.json())
+                .then(data => {
+                    const tableBody = document.querySelector('#time-table-body');
+                    tableBody.innerHTML = ''; // 기존 내용을 비우기
+                    data.forEach((detection, index) => {
+                        const row = document.createElement('tr');
+                        row.innerHTML = `<td>${index + 1}</td><td>${detection}</td>`;
+                        tableBody.appendChild(row);
+                    });
+                })
+                .catch(err => console.error('Error fetching detections:', err));
+        }
+        setInterval(updateDetections, 1000); // 1초마다 갱신
+    </script>
+</body>
+</html>
