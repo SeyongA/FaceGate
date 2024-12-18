@@ -1,44 +1,189 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ko">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>People Counter Live Stream</title>
-    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-</head>
-<body>
-    <h1>People Counter Live Stream</h1>
-    <img src="/video_feed" alt="Live Stream">
+    <title>실시간 인원 모니터링</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <style>
+        .camera-feed {
+            position: relative;
+            aspect-ratio: 16/9;
+            background: #000;
+            border-radius: 0.5rem;
+            overflow: hidden;
+        }
+        
+        .camera-feed img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
 
-    <h2>Detected Times</h2>
-    <table border="1" id="detections-table">
-        <thead>
-            <tr>
-                <th>#</th>
-                <th>Timestamp</th>
-            </tr>
-        </thead>
-        <tbody id="time-table-body">
-            <!-- AJAX로 데이터 로드 -->
-        </tbody>
-    </table>
+        .log-container {
+            height: calc(100vh - 500px);
+            min-height: 500px;
+            overflow-y: auto;
+            scrollbar-width: thin;
+        }
+
+        .log-container::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .log-container::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 3px;
+        }
+
+        .log-container::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 3px;
+        }
+
+        .log-container::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <div class="container mx-auto px-4 py-6">
+        <!-- 헤더 -->
+        <div class="flex justify-between items-center mb-6">
+            <div>
+                <h1 class="text-2xl font-bold text-gray-900">실시간 인원 모니터링</h1>
+                <p class="text-sm text-gray-600" id="current-time"></p>
+            </div>
+            <div class="bg-blue-500 text-white px-6 py-3 rounded-lg shadow-sm">
+                <p class="text-sm font-medium">현재 감지된 인원</p>
+                <p class="text-3xl font-bold text-center" id="current-count">0</p>
+            </div>
+        </div>
+
+        <!-- 메인 컨텐츠 -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- 카메라 피드 -->
+            <div class="lg:col-span-2">
+                <div class="bg-white rounded-lg shadow-sm">
+                    <div class="p-4 border-b border-gray-100">
+                        <h2 class="text-lg font-semibold text-gray-800">실시간 카메라</h2>
+                    </div>
+                    <div class="p-4">
+                        <div class="camera-feed">
+                            <img src="{{ url_for('video_feed') }}" alt="실시간 카메라">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 감지 로그 -->
+            <div class="lg:col-span-1">
+                <div class="bg-white rounded-lg shadow-sm h-full">
+                    <div class="p-4 border-b border-gray-100 flex justify-between items-center">
+                        <h2 class="text-lg font-semibold text-gray-800">감지 기록</h2>
+                        <button id="resetButton" 
+                                class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 
+                                       transition-colors flex items-center space-x-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" 
+                                 viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                            <span>초기화</span>
+                        </button>
+                    </div>
+                    <div class="log-container p-4" id="detection-log">
+                        <!-- 로그 항목들이 여기에 동적으로 추가됨 -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <script>
-        function updateDetections() {
-            fetch('/detections')
+        const socket = io();
+        const detectionLog = document.getElementById('detection-log');
+        const currentCount = document.getElementById('current-count');
+
+        // 현재 시간 업데이트
+        function updateTime() {
+            const now = new Date();
+            document.getElementById('current-time').textContent = 
+                now.toLocaleString('ko-KR', {
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    hour12: false
+                });
+        }
+        setInterval(updateTime, 1000);
+        updateTime();
+
+        // 로그 항목 생성
+        function createLogItem(data) {
+            const div = document.createElement('div');
+            div.className = 'bg-gray-50 rounded-lg p-4 mb-3';
+            
+            div.innerHTML = `
+                <div class="flex justify-between items-start">
+                    <div>
+                        <div class="flex items-center space-x-2">
+                            <span class="w-2 h-2 rounded-full bg-red-500"></span>
+                            <span class="font-medium">${data.count}명 감지</span>
+                        </div>
+                        <p class="text-sm text-gray-600 mt-1">상태: ${data.status}</p>
+                    </div>
+                    <span class="text-sm text-gray-500">${data.timestamp}</span>
+                </div>
+            `;
+            
+            return div;
+        }
+
+        // 소켓 이벤트 핸들러
+        socket.on('update_data', function(data) {
+            currentCount.textContent = data.current_count;
+        });
+
+        socket.on('new_detection', function(data) {
+            const logItem = createLogItem(data);
+            if (detectionLog.firstChild) {
+                detectionLog.insertBefore(logItem, detectionLog.firstChild);
+            } else {
+                detectionLog.appendChild(logItem);
+            }
+        });
+
+        // 초기화 버튼 이벤트 리스너
+        document.getElementById('resetButton').addEventListener('click', function() {
+            if (confirm('정말로 모든 기록을 초기화하시겠습니까?')) {
+                fetch('/reset_logs', {
+                    method: 'POST'
+                })
                 .then(response => response.json())
                 .then(data => {
-                    const tableBody = document.querySelector('#time-table-body');
-                    tableBody.innerHTML = ''; // 기존 내용을 비우기
-                    data.forEach((detection, index) => {
-                        const row = document.createElement('tr');
-                        row.innerHTML = `<td>${index + 1}</td><td>${detection}</td>`;
-                        tableBody.appendChild(row);
-                    });
+                    if (data.status === 'success') {
+                        detectionLog.innerHTML = '';
+                        currentCount.textContent = '0';
+                    }
                 })
-                .catch(err => console.error('Error fetching detections:', err));
-        }
-        setInterval(updateDetections, 1000); // 1초마다 갱신
+                .catch(error => console.error('Error:', error));
+            }
+        });
+
+        // 초기 로그 데이터 로드
+        fetch('/get_logs')
+            .then(response => response.json())
+            .then(logs => {
+                logs.forEach(log => {
+                    const logItem = createLogItem(log);
+                    detectionLog.appendChild(logItem);
+                });
+            });
     </script>
 </body>
 </html>
